@@ -16,18 +16,21 @@ import {
   onAuthStateChanged,
 } from "firebase/auth";
 
-// Konfigurasi Firebase kamu (ambil dari konsol Firebase)
+// Konfigurasi Firebase
 const firebaseConfig = {
-  apiKey: "API_KEY",
-  authDomain: "AUTH_DOMAIN",
-  projectId: "PROJECT_ID",
-  storageBucket: "STORAGE_BUCKET",
-  messagingSenderId: "SENDER_ID",
-  appId: "APP_ID"
+  apiKey: "AIzaSyDTBjYGmIPgXG9DDgSp7-gGrCrZaVRSPys",
+  authDomain: "chatapp-83b63.firebaseapp.com",
+  projectId: "chatapp-83b63",
+  storageBucket: "chatapp-83b63.firebasestorage.app",
+  messagingSenderId: "780228503102",
+  appId: "1:780228503102:web:f1e490d3b43ae0f76bd36f",
+  measurementId: "G-0N3FQW7Z64"
 };
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
+
+// Siapkan Auth dan Database
 const auth = getAuth(app);
 const db = getFirestore(app);
 
