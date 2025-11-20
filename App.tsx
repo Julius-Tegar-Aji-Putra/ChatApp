@@ -49,13 +49,17 @@ export default function App() {
       setUser(u);
       
       if (u) {
+        const nameFromStorage = storage.getString('user.name');
         const displayName = u.displayName || u.email;
-        if (displayName) {
-            // Sinkronisasi nama jika online
+        if (nameFromStorage) {
+            setLocalName(nameFromStorage);
+        } else if (displayName) {
             storage.set('user.name', displayName);
             setLocalName(displayName);
         }
-      } 
+      } else {
+        setLocalName(null);
+      }
       // HAPUS ELSE YANG MERESET NAMA
       // Kita tidak mau mereset nama di memori jika logout terjadi karena koneksi putus.
       // Pembersihan data asli terjadi di tombol Logout (storage.clearAll).
@@ -69,6 +73,9 @@ export default function App() {
     };
   }, []);
 
+  const finalName = localName || user?.displayName || user?.email || "Guest";
+  const isLoggedIn = user || storage.getString('user.uid');
+
   if (initializing) {
     return (
       <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
@@ -76,15 +83,6 @@ export default function App() {
       </View>
     );
   }
-
-  // LOGIKA NAMA FINAL (ANTI GUEST)
-  // Urutan: State Lokal -> Firebase User -> BACA ULANG MMKV -> Email -> Guest
-  // "storage.getString('user.name')" di sini adalah jaring pengaman terakhir saat Offline.
-  const finalName = localName || user?.displayName || storage.getString('user.name') || user?.email || "Guest";
-
-  // LOGIKA STATUS LOGIN
-  // Login jika: Ada sesi di Firebase (Online) ATAU Ada sesi di MMKV (Offline)
-  const isLoggedIn = user || hasLocalSession;
 
   return (
     <NavigationContainer>

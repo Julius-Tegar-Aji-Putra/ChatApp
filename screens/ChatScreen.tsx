@@ -56,7 +56,6 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: `Chat: ${name}`,
       headerRight: () => (
         <TouchableOpacity onPress={handleLogout} style={{ marginRight: 10 }}>
           <Icon name="log-out" size={24} color="#FF3B30" />
@@ -64,7 +63,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       ),
       headerBackVisible: false,
     });
-  }, [navigation, name]);
+  }, [navigation]);
 
   // Handle keyboard events
   useEffect(() => {
@@ -105,6 +104,17 @@ export default function ChatScreen({ route, navigation }: Props) {
   };
 
   useEffect(() => {
+    const savedChat = mmkvStorage.getString('chat_history');
+    if (savedChat) {
+      try {
+        const parsedChat = JSON.parse(savedChat);
+        console.log("Memuat chat dari local storage...");
+        setMessages(parsedChat);
+      } catch (e) {
+        console.error("Gagal load chat local:", e);
+      }
+    }
+
     const q = query(messagesCollection, orderBy("createdAt", "asc"));
     const unsub = onSnapshot(q, (snapshot: QuerySnapshot) => {
       const list: MessageType[] = [];
@@ -115,6 +125,11 @@ export default function ChatScreen({ route, navigation }: Props) {
         });
       });
       setMessages(list);
+
+      if (list.length > 0) {
+        mmkvStorage.set('chat_history', JSON.stringify(list));
+        console.log("Chat terbaru disimpan ke MMKV.");
+      }
       
       // Auto scroll ke bawah setelah messages update
       setTimeout(() => {
