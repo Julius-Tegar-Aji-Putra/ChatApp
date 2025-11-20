@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useLayoutEffect } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,10 @@ import {
   Button,
   FlatList,
   StyleSheet,
+  TouchableOpacity,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import {
   QuerySnapshot,
@@ -17,12 +21,16 @@ import {
   query,
   orderBy,
   onSnapshot,
-} from "../firebase"; // Path ke firebase.ts
-import { messagesCollection } from "../firebase"; // Path ke firebase.ts
+  messagesCollection,
+  auth,
+  signOut,
+} from "../firebase";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../App"; // Ambil tipe dari App.tsx
+import { RootStackParamList } from "../App";
+import Icon from "react-native-vector-icons/Feather";
+import { storage } from "../utils/storage";
+import { useHeaderHeight } from '@react-navigation/elements';
 
-// Tipe untuk objek pesan
 type MessageType = {
   id: string;
   text: string;
@@ -30,21 +38,51 @@ type MessageType = {
   createdAt: { seconds: number; nanoseconds: number } | null;
 };
 
-// Tipe untuk props screen ini
 type Props = NativeStackScreenProps<RootStackParamList, "Chat">;
 
-export default function ChatScreen({ route }: Props) {
-  const { name } = route.params; // Ambil nama dari LoginScreen
+export default function ChatScreen({ route, navigation }: Props) {
+  // Kita tidak lagi bergantung 100% pada 'name' dari route.params untuk logika internal
+  // agar data selalu fresh dari storage.
   const [message, setMessage] = useState<string>("");
   const [messages, setMessages] = useState<MessageType[]>([]);
+  
+  const headerHeight = useHeaderHeight();
 
-  // Mengambil pesan dari Firestore secara real-time
+  // --- HEADER & LOGOUT ---
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      // HAPUS BAGIAN TITLE DARI SINI
+      // Biarkan App.tsx yang mengurus Title agar bisa update otomatis saat nama berubah
+      
+      headerRight: () => (
+        <TouchableOpacity onPress={handleLogout} style={{ marginRight: 10 }}>
+          <Icon name="log-out" size={24} color="#FF3B30" />
+        </TouchableOpacity>
+      ),
+      headerBackVisible: false,
+    });
+  }, [navigation]);
+
+  const handleLogout = () => {
+    Alert.alert("Keluar", "Yakin ingin logout?", [
+      { text: "Batal", style: "cancel" },
+      {
+        text: "Ya",
+        style: "destructive",
+        onPress: async () => {
+            storage.clearAll();
+            await signOut(auth);
+        },
+      },
+    ]);
+  };
+
+  // --- LOGIKA CHAT ---
   useEffect(() => {
     const q = query(messagesCollection, orderBy("createdAt", "asc"));
-
-    const unsub = onSnapshot(q, (snapshot) => {
+    const unsub = onSnapshot(q, (snapshot: QuerySnapshot) => {
       const list: MessageType[] = [];
-      snapshot.forEach((doc) => {
+      snapshot.forEach((doc: QueryDocumentSnapshot) => {
         list.push({
           id: doc.id,
           ...(doc.data() as Omit<MessageType, "id">),
@@ -52,62 +90,76 @@ export default function ChatScreen({ route }: Props) {
       });
       setMessages(list);
     });
-
     return () => unsub();
   }, []);
 
-  // Mengirim pesan ke Firestore
   const sendMessage = async () => {
     if (!message.trim()) return;
 
+    // AMBIL NAMA TERBARU DARI MMKV (SOLUSI FIX)
+    // Jika route.params.name masih 'email' karena race condition, 
+    // storage pasti sudah punya 'username' yang benar.
+    const currentUser = storage.getString('user.name') || auth.currentUser?.email || "Guest";
+
     await addDoc(messagesCollection, {
       text: message,
-      user: name,
+      user: currentUser, // Pakai nama yang benar
       createdAt: serverTimestamp(),
     });
-
-    setMessage(""); // Kosongkan input setelah dikirim
+    setMessage("");
   };
 
-  // Render satu item (chat bubble)
-  const renderItem = ({ item }: { item: MessageType }) => (
-    <View
-      style={[
-        styles.msgBox,
-        item.user === name ? styles.myMsg : styles.otherMsg,
-      ]}
-    >
-      <Text style={styles.sender}>{item.user}</Text>
-      <Text>{item.text}</Text>
-    </View>
-  );
+  const renderItem = ({ item }: { item: MessageType }) => {
+    // Cek nama user saat ini untuk menentukan posisi bubble
+    const currentUser = storage.getString('user.name') || auth.currentUser?.email || "Guest";
+    const isMyMessage = item.user === currentUser;
+
+    return (
+      <View
+        style={[
+          styles.msgBox,
+          isMyMessage ? styles.myMsg : styles.otherMsg,
+        ]}
+      >
+        <Text style={styles.sender}>{item.user}</Text>
+        <Text>{item.text}</Text>
+      </View>
+    );
+  };
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Daftar Pesan */}
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={{ padding: 10 }}
-      />
-
-      {/* Input Row (Text Input + Tombol) */}
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          placeholder="Ketik pesan..."
-          value={message}
-          onChangeText={setMessage}
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
+    >
+      <View style={styles.container}>
+        <FlatList
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={{ padding: 10, paddingBottom: 20 }}
         />
-        <Button title="Kirim" onPress={sendMessage} />
+
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="Ketik pesan..."
+            value={message}
+            onChangeText={setMessage}
+          />
+          <Button title="Kirim" onPress={sendMessage} />
+        </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
-// Styles
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f2f2f2', 
+  },
   msgBox: {
     padding: 10,
     marginVertical: 6,
@@ -132,6 +184,7 @@ const styles = StyleSheet.create({
     padding: 10,
     borderTopWidth: 1,
     borderColor: "#ccc",
+    backgroundColor: "#fff",
   },
   input: {
     flex: 1,

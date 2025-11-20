@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import LoginScreen from "./screens/LoginScreen"; // Pastikan path-nya benar
-import ChatScreen from "./screens/ChatScreen";   // Pastikan path-nya benar
+import { View, ActivityIndicator } from "react-native";
+import LoginScreen from "./screens/LoginScreen";
+import RegisterScreen from "./screens/RegisterScreen";
+import ChatScreen from "./screens/ChatScreen";
 import { auth, onAuthStateChanged } from "./firebase";
 import { User } from "firebase/auth";
+import { storage } from "./utils/storage";
 
-// Mendefinisikan tipe untuk parameter navigasi
 export type RootStackParamList = {
   Login: undefined;
+  Register: undefined;
   Chat: { name: string };
 };
 
@@ -16,30 +19,89 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [initializing, setInitializing] = useState(true);
+  
+  // State untuk memantau login via MMKV (agar logout offline jalan real-time)
+  const [hasLocalSession, setHasLocalSession] = useState<boolean>(
+    !!storage.getString('user.uid')
+  );
+  
+  // State lokal untuk nama
+  const [localName, setLocalName] = useState<string | null>(storage.getString('user.name') || null);
 
   useEffect(() => {
-    // Di panduanmu ada signInAnonymously, tapi tidak dipakai di onAuthStateChanged
-    // Kita ikuti panduanmu
-    // signInAnonymously(auth).catch(console.error);
-
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    // 1. LISTENER MMKV (PENTING UNTUK LOGOUT & REGISTER)
+    const listener = storage.addOnValueChangedListener((changedKey) => {
+      // Jika user.uid berubah/dihapus (saat logout), update state sesi
+      if (changedKey === 'user.uid') {
+        const uid = storage.getString('user.uid');
+        setHasLocalSession(!!uid);
+      }
+      // Jika user.name berubah (saat register), update nama
+      if (changedKey === 'user.name') {
+        const newName = storage.getString('user.name');
+        if (newName) setLocalName(newName);
+      }
     });
 
-    return () => unsub();
+    // 2. LISTENER FIREBASE AUTH
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      
+      if (u) {
+        const displayName = u.displayName || u.email;
+        if (displayName) {
+            // Sinkronisasi nama jika online
+            storage.set('user.name', displayName);
+            setLocalName(displayName);
+        }
+      } 
+      // HAPUS ELSE YANG MERESET NAMA
+      // Kita tidak mau mereset nama di memori jika logout terjadi karena koneksi putus.
+      // Pembersihan data asli terjadi di tombol Logout (storage.clearAll).
+
+      if (initializing) setInitializing(false);
+    });
+
+    return () => {
+      listener.remove();
+      unsubAuth();
+    };
   }, []);
 
-  // Baris ini dari slide, tapi sepertinya salah tempat
-  // if (!user) return null; 
-  // Seharusnya: Jika user TIDAK ADA, tampilkan Login. Jika ADA, tampilkan Chat.
-  // Tapi App.tsx di slide tidak melakukan ini, ia hanya setup navigasi.
-  // Kita ikuti slide apa adanya.
+  if (initializing) {
+    return (
+      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+        <ActivityIndicator size="large" color="#0000ff" />
+      </View>
+    );
+  }
+
+  // LOGIKA NAMA FINAL (ANTI GUEST)
+  // Urutan: State Lokal -> Firebase User -> BACA ULANG MMKV -> Email -> Guest
+  // "storage.getString('user.name')" di sini adalah jaring pengaman terakhir saat Offline.
+  const finalName = localName || user?.displayName || storage.getString('user.name') || user?.email || "Guest";
+
+  // LOGIKA STATUS LOGIN
+  // Login jika: Ada sesi di Firebase (Online) ATAU Ada sesi di MMKV (Offline)
+  const isLoggedIn = user || hasLocalSession;
 
   return (
     <NavigationContainer>
       <Stack.Navigator>
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Chat" component={ChatScreen} />
+        {isLoggedIn ? (
+          <Stack.Screen 
+            name="Chat" 
+            component={ChatScreen} 
+            initialParams={{ name: finalName }} 
+            options={{ title: `Chat: ${finalName}` }}
+          />
+        ) : (
+          <Stack.Group screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Register" component={RegisterScreen} />
+          </Stack.Group>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

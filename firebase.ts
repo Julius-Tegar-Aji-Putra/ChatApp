@@ -14,6 +14,9 @@ import {
   getAuth,
   signInAnonymously,
   onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut
 } from "firebase/auth";
 
 // Konfigurasi Firebase
@@ -49,4 +52,7 @@ export {
   onSnapshot,
   signInAnonymously,
   onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut
 };
