@@ -27,7 +27,9 @@ export default function App() {
   );
   
   // State lokal untuk nama
-  const [localName, setLocalName] = useState<string | null>(storage.getString('user.name') || null);
+  const [localName, setLocalName] = useState<string | null>(() => {
+      return storage.getString('user.name') || null;
+  });
 
   useEffect(() => {
     // 1. LISTENER MMKV (PENTING UNTUK LOGOUT & REGISTER)
@@ -51,15 +53,11 @@ export default function App() {
       if (u) {
         const nameFromStorage = storage.getString('user.name');
         const displayName = u.displayName || u.email;
-        if (nameFromStorage) {
-            setLocalName(nameFromStorage);
-        } else if (displayName) {
+        if (displayName) {
             storage.set('user.name', displayName);
             setLocalName(displayName);
-        }
-      } else {
-        setLocalName(null);
-      }
+        } 
+      } 
       // HAPUS ELSE YANG MERESET NAMA
       // Kita tidak mau mereset nama di memori jika logout terjadi karena koneksi putus.
       // Pembersihan data asli terjadi di tombol Logout (storage.clearAll).
@@ -73,8 +71,7 @@ export default function App() {
     };
   }, []);
 
-  const finalName = localName || user?.displayName || user?.email || "Guest";
-  const isLoggedIn = user || storage.getString('user.uid');
+  
 
   if (initializing) {
     return (
@@ -83,6 +80,9 @@ export default function App() {
       </View>
     );
   }
+
+  const finalName = localName || user?.displayName || user?.email || "Guest";
+  const isLoggedIn = user || storage.getString('user.uid');
 
   return (
     <NavigationContainer>

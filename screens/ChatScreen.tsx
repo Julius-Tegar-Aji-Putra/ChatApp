@@ -76,15 +76,8 @@ export default function ChatScreen({ route, navigation }: Props) {
         }, 100);
       }
     );
-    const keyboardDidHideListener = Keyboard.addListener(
-      'keyboardDidHide',
-      () => {
-        // Optional: handle when keyboard hides
-      }
-    );
 
     return () => {
-      keyboardDidHideListener?.remove();
       keyboardDidShowListener?.remove();
     };
   }, []);
@@ -103,20 +96,48 @@ export default function ChatScreen({ route, navigation }: Props) {
     ]);
   };
 
+  // --- 4. LOGIKA LOAD & SYNC CHAT ---
   useEffect(() => {
-    const savedChat = mmkvStorage.getString('chat_history');
-    if (savedChat) {
-      try {
-        const parsedChat = JSON.parse(savedChat);
-        console.log("Memuat chat dari local storage...");
-        setMessages(parsedChat);
-      } catch (e) {
-        console.error("Gagal load chat local:", e);
-      }
-    }
+    let isMounted = true;
 
+    // A. FUNGSI LOAD DATA OFFLINE
+    const loadLocalChat = () => {
+      const savedChat = mmkvStorage.getString('chat_history');
+      if (savedChat) {
+        try {
+          const parsedChat = JSON.parse(savedChat);
+          console.log(`[OFFLINE] Memuat ${parsedChat.length} pesan dari MMKV.`);
+          if (isMounted) setMessages(parsedChat);
+        } catch (e) {
+          console.error("[OFFLINE] Gagal parse chat local:", e);
+        }
+      } else {
+        console.log("[OFFLINE] Tidak ada data chat di MMKV.");
+      }
+    };
+
+    // Load data lokal saat pertama kali mount
+    loadLocalChat();
+
+    // B. SYNC ONLINE
     const q = query(messagesCollection, orderBy("createdAt", "asc"));
-    const unsub = onSnapshot(q, (snapshot: QuerySnapshot) => {
+    
+    const unsub = onSnapshot(q, { includeMetadataChanges: true }, 
+      (snapshot: QuerySnapshot) => {
+      if (!isMounted) return;
+
+      // Logika Guard: Jika snapshot kosong (mungkin baru konek atau offline), cek dulu
+      // Apakah ini karena 'fromCache' (offline) dan kosong?
+      const source = snapshot.metadata.fromCache ? "local cache" : "server";
+      console.log(`[ONLINE] Snapshot update dari ${source}. Jumlah docs: ${snapshot.docs.length}`);
+
+      if (snapshot.empty) {
+          // Jika snapshot kosong, jangan hapus state messages yang mungkin sudah diisi dari MMKV
+          // Kecuali kita yakin server memang kosong (tapi susah dibedakan saat error koneksi)
+          console.log("[ONLINE] Snapshot kosong. Mempertahankan data yang ada di layar.");
+          return;
+      }
+
       const list: MessageType[] = [];
       snapshot.forEach((doc: QueryDocumentSnapshot) => {
         list.push({
@@ -124,24 +145,36 @@ export default function ChatScreen({ route, navigation }: Props) {
           ...(doc.data() as Omit<MessageType, "id">),
         });
       });
+
+      // Selalu update UI dengan data terbaru dari snapshot (baik itu cache Firestore atau Server)
       setMessages(list);
 
+      // Simpan ke MMKV sebagai backup manual kita
       if (list.length > 0) {
         mmkvStorage.set('chat_history', JSON.stringify(list));
-        console.log("Chat terbaru disimpan ke MMKV.");
+        console.log("[SYNC] Chat tersimpan ke MMKV.");
       }
       
-      // Auto scroll ke bawah setelah messages update
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+
+    }, (error) => {
+        // ERROR HANDLER PENTING!
+        // Jika onSnapshot gagal total (biasanya karena permission atau koneksi parah),
+        // JANGAN ubah state messages. Biarkan data dari loadLocalChat() tetap tampil.
+        console.log("[ERROR] Firestore Error:", error.message);
+        // Opsional: Coba load ulang dari MMKV untuk memastikan data tidak hilang dari layar
+        loadLocalChat(); 
     });
-    return () => unsub();
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, []);
 
   const sendMessage = async (imageUrl: string | null = null) => {
     if (!message.trim() && !imageUrl) return;
-    if (sending) return; // Prevent double sending
+    if (sending) return; 
 
     const currentUser = mmkvStorage.getString('user.name') || auth.currentUser?.email || "Guest";
 
