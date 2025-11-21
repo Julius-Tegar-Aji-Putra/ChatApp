@@ -169,7 +169,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             });
             console.log("Pesan pending berhasil dikirim:", msg.text);
         } catch (error) {
-            console.error("Gagal sync pesan:", error);
+            console.log("Gagal sync pesan:", error);
             // Jika gagal lagi, kembalikan ke queue (opsional, tapi aman)
         }
     }
@@ -224,7 +224,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           console.log(`[OFFLINE] Memuat ${parsedChat.length} pesan dari MMKV.`);
           if (isMounted) setMessages(parsedChat);
         } catch (e) {
-          console.error("[OFFLINE] Gagal parse chat local:", e);
+          console.log("[OFFLINE] Gagal parse chat local:", e);
         }
       } else {
         console.log("[OFFLINE] Tidak ada data chat di MMKV.");
@@ -261,22 +261,24 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       // Selalu update UI dengan data terbaru dari snapshot (baik itu cache Firestore atau Server)
       setMessages(list);
-
-      // Simpan ke MMKV sebagai backup manual kita
       if (list.length > 0) {
-        mmkvStorage.set('chat_history', JSON.stringify(list));
-        console.log("[SYNC] Chat tersimpan ke MMKV.");
-      }
-      
+          try {
+              mmkvStorage.set('chat_history', JSON.stringify(list));
+              console.log("[SYNC] Chat tersimpan ke MMKV.");
+          } catch (e) { 
+              console.log("MMKV Write Error:", e);
+          }
+        }
+ 
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
 
     }, (error) => {
-        // ERROR HANDLER PENTING!
-        // Jika onSnapshot gagal total (biasanya karena permission atau koneksi parah),
-        // JANGAN ubah state messages. Biarkan data dari loadLocalChat() tetap tampil.
-        console.log("[ERROR] Firestore Error:", error.message);
-        // Opsional: Coba load ulang dari MMKV untuk memastikan data tidak hilang dari layar
+        if (error.code === 'unavailable' || error.message.includes('offline')) {
+            console.log("Tidak bisa terkoneksi dengan firebase - OFFLINE");
+        } else {
+            console.log("Firestore Error:", error.message);
         loadLocalChat(); 
+        }
     });
 
     return () => {
@@ -324,7 +326,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       });
       setMessage("");
     } catch (error: any) {
-       console.error("Send Error:", error);
+       console.log("Send Error:", error);
        Alert.alert("Gagal", "Gagal mengirim pesan.");
     } finally {
       setSending(false);
