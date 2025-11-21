@@ -92,7 +92,7 @@ export default function App() {
             name="Chat" 
             component={ChatScreen} 
             initialParams={{ name: finalName }} 
-            options={{ title: `Chat: ${finalName}` }}
+            options={{ title: `User: ${finalName}` }}
           />
         ) : (
           <Stack.Group screenOptions={{ headerShown: false }}>
