@@ -558,7 +558,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         renderItem={renderItem}
         contentContainerStyle={{ padding: 10, paddingBottom: 20 }}
         style={{ flex: 1 }}
-
+        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         onScrollBeginDrag={() => {
            if (isKeyboardVisible) {
              setKeyboardVisible(false); // Hilang instan saat jari nyentuh layar
