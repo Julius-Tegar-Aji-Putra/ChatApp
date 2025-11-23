@@ -90,11 +90,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   const headerTitleRef = useRef<string>("");
   // State untuk pesan yang menunggu koneksi (Offline)
   const [pendingMessages, setPendingMessages] = useState<MessageType[]>([]);
+  const isFirstLoad = useRef(true);
  
   const [uploading, setUploading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   // State Status & Notifikasi
   const [isConnected, setIsConnected] = useState<boolean | null>(true);
   const [bannerText, setBannerText] = useState("Koneksi terputus");
@@ -287,7 +289,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         try {
           const parsedChat = JSON.parse(savedChat);
           console.log(`[OFFLINE] Memuat ${parsedChat.length} pesan dari MMKV.`);
-          if (isMounted) setMessages(parsedChat);
+          if (isMounted) {
+             setMessages(parsedChat);
+          }
         } catch (e) {
           console.log("[OFFLINE] Gagal parse chat local:", e);
         }
@@ -347,8 +351,16 @@ export default function ChatScreen({ route, navigation }: Props) {
               console.log("MMKV Write Error:", e);
           }
         }
+
+      // setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 500);
  
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      if (isAtBottom) {
+          // Gunakan timeout kecil untuk memastikan render selesai
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      } else {
+          // Opsional: Tampilkan notifikasi kecil "Pesan Baru ↓" jika mau
+          console.log("Ada pesan baru, tapi user sedang di atas. Tidak scroll.");
+      }
 
     }, (error) => {
         if (error.code === 'unavailable' || error.message.includes('offline')) {
@@ -366,8 +378,12 @@ export default function ChatScreen({ route, navigation }: Props) {
   }, []);
 
   const sendMessage = async (imageUrl: string | null = null) => {
-    if (!message.trim() && !imageUrl) return;
+    const textToSend = message;
+
+    if (!textToSend.trim() && !imageUrl) return;
     if (sending) return;
+
+    setMessage("");
 
     const currentUser = mmkvStorage.getString('user.name') || auth.currentUser?.email || "Guest";
     const tempId = generateUniqueId();
@@ -377,7 +393,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         // Buat pesan temporary
         const tempMsg: MessageType = {
             id: `temp_${tempId}`, // ID sementara
-            text: message,
+            text: textToSend,
             image: imageUrl || undefined,
             user: currentUser,
             createdAt: Date.now(), // PAKAI WAKTU LOKAL HP
@@ -392,9 +408,8 @@ export default function ChatScreen({ route, navigation }: Props) {
         // 2. Simpan ke MMKV (Persistent Queue)
         mmkvStorage.set('offline_queue', JSON.stringify(newPendingList));
        
-        setMessage("");
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
         showToast("Pesan akan dikirim saat Anda kembali online", "offline");
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 400);
         return; // Stop eksekusi, jangan coba kirim ke firebase dulu
     }
 
@@ -403,14 +418,12 @@ export default function ChatScreen({ route, navigation }: Props) {
     setSending(true);
     try {
       await addDoc(messagesCollection, {
-        text: message,
+        text: textToSend,
         image: imageUrl,
         user: currentUser,
         createdAt: serverTimestamp(),
         clientMessageId: tempId,
       });
-      setMessage("");
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (error: any) {
        console.log("Send Error:", error);
        showToast("Jaringan lambat. Disimpan ke antrian.", "offline");
@@ -439,6 +452,24 @@ export default function ChatScreen({ route, navigation }: Props) {
       await sendMessage(fullBase64);
       setUploading(false);
     }
+  };
+
+  // --- DETEKSI POSISI SCROLL ---
+  const handleScroll = (event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+   
+    // Hitung jarak dari bawah
+    // contentSize.height = Tinggi total semua chat
+    // layoutMeasurement.height = Tinggi layar HP
+    // contentOffset.y = Posisi scroll saat ini
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+   
+    // Jika jarak kurang dari 0.01 pixel, anggap "Mentok Bawah"
+    // Angka toleransi kecil biar ga harus pixel perfect
+    const isCloseToBottom = distanceFromBottom < 50;
+    console.log("isAtBottom: ", isCloseToBottom);
+   
+    setIsAtBottom(isCloseToBottom);
   };
 
   const displayedMessages = [...messages, ...pendingMessages];
@@ -542,6 +573,17 @@ export default function ChatScreen({ route, navigation }: Props) {
           </View>
         </View>
       )}
+
+      {!isAtBottom && (
+        <TouchableOpacity 
+          style={styles.scrollToBottomButton}
+          onPress={() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }}
+        >
+          <Icon name="arrow-down" size={24} color="#007AFF" />
+        </TouchableOpacity>
+      )}
      
       {/* --- TOAST NOTIFICATION (PILL STYLE) --- */}
       <Animated.View style={[
@@ -558,8 +600,38 @@ export default function ChatScreen({ route, navigation }: Props) {
         renderItem={renderItem}
         contentContainerStyle={{ padding: 10, paddingBottom: 20 }}
         style={{ flex: 1 }}
-        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={() => {
+            // 1. LOGIKA LOAD AWAL (Sticky Bottom)
+            // Selama user belum menyentuh layar (isFirstLoad = true), 
+            // setiap kali konten berubah ukuran (teks masuk, gambar loading selesai),
+            // kita paksa scroll ke bawah secara instan.
+            if (isFirstLoad.current && displayedMessages.length > 0) {
+                flatListRef.current?.scrollToEnd({ animated: false });
+
+                setTimeout(() => {
+                    isFirstLoad.current = false;
+                }, 15000);
+            } 
+            
+            // 2. LOGIKA CHAT BIASA (Pesan Baru masuk saat Online)
+            // Jika user memang sedang di posisi paling bawah, ikuti konten baru dengan animasi
+            else if (isAtBottom) {
+                flatListRef.current?.scrollToEnd({ animated: true });
+            }
+        }}
+               
+       
+        onLayout={() => {
+          if (isFirstLoad.current && displayedMessages.length > 0) {
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: false });
+            }, 500); // Tambah delay kecil
+          }
+        }}
         onScrollBeginDrag={() => {
+          isFirstLoad.current = false;
            if (isKeyboardVisible) {
              setKeyboardVisible(false); // Hilang instan saat jari nyentuh layar
              Keyboard.dismiss(); // Turunkan keyboard
@@ -691,5 +763,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#555', // Warna abu-abu biar ga ganggu teks utama
     opacity: 0.7,
-  }
+  },
+ scrollToBottomButton: {
+    position: 'absolute',
+    bottom: 80, // Di atas input box (sesuaikan dengan tinggi inputRow + padding)
+    right: 7,
+    width: 40,
+    height: 40,
+    borderRadius: 25,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    zIndex: 10,
+},
 });
