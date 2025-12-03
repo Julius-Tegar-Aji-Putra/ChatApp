@@ -45,21 +45,15 @@ export default function RegisterScreen({ navigation }: Props) {
     setLoading(true);
 
     try {
-      // 1. Buat akun di Firebase (Otomatis Login di background)
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // 2. Update display name
       await updateProfile(user, { displayName: username });
 
-      // 3. Simpan ke MMKV
-      // Saat baris ini jalan, listener di App.tsx akan langsung bereaksi mengganti nama di header!
       storage.set('user.uid', user.uid);
       storage.set('user.email', user.email || '');
       storage.set('user.name', username);
 
-      // 4. Sukses
-      // PERBAIKAN: Jangan navigate ke 'Login'. Biarkan App.tsx yang mendeteksi auth change.
       Alert.alert('Sukses', 'Akun berhasil dibuat!', [
         { text: 'OK', onPress: () => console.log("Register sukses, auto-redirecting...") } 
       ]);
@@ -99,7 +93,6 @@ export default function RegisterScreen({ navigation }: Props) {
         autoCapitalize="none"
       />
       
-      {/* Password Field */}
       <View style={styles.passwordContainer}>
         <TextInput
           style={styles.inputPassword}
@@ -114,7 +107,6 @@ export default function RegisterScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Confirm Password Field */}
       <View style={styles.passwordContainer}>
         <TextInput
           style={styles.inputPassword}

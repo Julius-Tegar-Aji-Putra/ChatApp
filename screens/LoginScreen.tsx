@@ -19,14 +19,9 @@ type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 export default function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
-  // State untuk Show/Hide Password
   const [isPasswordHidden, setPasswordHidden] = useState(true);
-
   const [isLoginLoading, setLoginLoading] = useState(false);
   const [isGuestLoading, setGuestLoading] = useState(false);
-
-  // --- 1. FUNGSI LOGIN EMAIL ---
   const handleLogin = async () => {
     if (email === '' || password === '') {
       Alert.alert('Error', 'Email dan password tidak boleh kosong.');
@@ -38,16 +33,11 @@ export default function LoginScreen({ navigation }: Props) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
-      // Simpan ke MMKV
       storage.set('user.uid', user.uid);
       if (user.email) storage.set('user.email', user.email);
       
-      // KUNCI PERBAIKAN: Ambil nama dari profil (jika register pakai nama) atau pakai email
       const displayName = user.displayName || user.email || "User";
       storage.set('user.name', displayName);
-      
-      // Navigasi otomatis dihandle oleh App.tsx
-
     } catch (error: any) {
       Alert.alert('Login Gagal', 'Email atau password salah.');
     } finally {
@@ -55,7 +45,6 @@ export default function LoginScreen({ navigation }: Props) {
     }
   };
 
-  // --- 2. FUNGSI LOGIN GUEST ---
   const handleGuestLogin = async () => {
     setGuestLoading(true);
     
@@ -63,9 +52,7 @@ export default function LoginScreen({ navigation }: Props) {
       const userCredential = await signInAnonymously(auth);
       const user = userCredential.user;
       
-      // Simpan UID
       storage.set('user.uid', user.uid);
-      // PENTING: Set manual nama 'Guest' di MMKV
       storage.set('user.name', 'Guest');
       
     } catch (error: any) {
@@ -90,7 +77,6 @@ export default function LoginScreen({ navigation }: Props) {
         autoCapitalize="none"
       />
       
-      {/* Input Password dengan Icon Mata */}
       <View style={styles.passwordContainer}>
         <TextInput
           style={styles.inputPassword}
@@ -105,7 +91,6 @@ export default function LoginScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Tombol Login */}
       <TouchableOpacity 
         style={styles.button} 
         onPress={handleLogin} 
@@ -118,7 +103,6 @@ export default function LoginScreen({ navigation }: Props) {
         )}
       </TouchableOpacity>
 
-      {/* Link ke Register */}
       <View style={styles.registerContainer}>
         <Text style={styles.registerText}>Belum punya akun? </Text>
         <TouchableOpacity onPress={() => navigation.navigate('Register')}>
@@ -126,10 +110,8 @@ export default function LoginScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Pemisah */}
       <View style={{height: 1, backgroundColor: '#ccc', width: '80%', marginVertical: 20}} />
 
-      {/* Tombol Guest */}
       <TouchableOpacity 
         style={[styles.button, styles.guestButton]} 
         onPress={handleGuestLogin}

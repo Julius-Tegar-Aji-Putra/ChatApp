@@ -42,10 +42,10 @@ const generateUniqueId = () => {
 };
 
 const getDateFromTimestamp = (timestamp: any): Date => {
-  if (!timestamp) return new Date(); // Fallback sekarang
-  if (timestamp.toDate) return timestamp.toDate(); // Format Firestore
-  if (timestamp.seconds) return new Date(timestamp.seconds * 1000); // Format Seconds
-  return new Date(timestamp); // Format Number/Date
+  if (!timestamp) return new Date();
+  if (timestamp.toDate) return timestamp.toDate(); 
+  if (timestamp.seconds) return new Date(timestamp.seconds * 1000); 
+  return new Date(timestamp); 
 };
 
 const formatTime = (timestamp: any) => {
@@ -59,19 +59,15 @@ const formatDatePill = (timestamp: any) => {
   const yesterday = new Date();
   yesterday.setDate(now.getDate() - 1);
 
-  // Cek apakah hari ini
   if (date.toDateString() === now.toDateString()) {
     return "Hari Ini";
   }
-  // Cek apakah kemarin
   if (date.toDateString() === yesterday.toDateString()) {
     return "Kemarin";
   }
-  // Format lengkap
   return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
-// Update MessageType
 type MessageType = {
   id: string;
   text: string;
@@ -88,28 +84,21 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [message, setMessage] = useState<string>("");
   const [messages, setMessages] = useState<MessageType[]>([]);
   const headerTitleRef = useRef<string>("");
-  // State untuk pesan yang menunggu koneksi (Offline)
   const [pendingMessages, setPendingMessages] = useState<MessageType[]>([]);
   const isFirstLoad = useRef(true);
- 
   const [uploading, setUploading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
-  // State Status & Notifikasi
   const [isConnected, setIsConnected] = useState<boolean | null>(true);
   const [bannerText, setBannerText] = useState("Koneksi terputus");
-  const [bannerColor, setBannerColor] = useState("#808080"); // Default Grey
+  const [bannerColor, setBannerColor] = useState("#808080"); 
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  // Ref untuk melacak status koneksi sebelumnya (biar gak muncul notif pas awal buka app)
-  const wasOffline = useRef(false);
- 
- 
+  const wasOffline = useRef(false); 
   const flatListRef = useRef<FlatList>(null);
   const name = headerTitleRef.current || route.params.name;
 
-  // --- 1. HEADER ---
   useLayoutEffect(() => {
     navigation.setOptions({
       headerTitle: (props) => {
@@ -143,19 +132,16 @@ export default function ChatScreen({ route, navigation }: Props) {
     });
   }, [navigation, isConnected]);
 
-  // --- 2. FUNGSI HELPER NOTIFIKASI ---
   const showToast = (text: string, type: 'offline' | 'online') => {
     setBannerText(text);
-    setBannerColor(type === 'offline' ? '#666666' : '#2196F3'); // Abu-abu / Biru
-   
-    // Animasi Masuk
+    setBannerColor(type === 'offline' ? '#666666' : '#2196F3');
+  
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 300,
       useNativeDriver: true,
     }).start();
 
-    // Auto hide setelah 3 detik
     setTimeout(() => {
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -165,35 +151,28 @@ export default function ChatScreen({ route, navigation }: Props) {
     }, 3000);
   };
 
-  // --- 3. DETEKSI INTERNET & SYNC ---
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       const online = state.isConnected === true;
       setIsConnected(online);
 
       if (!online) {
-        // Kasus: Online -> Offline
         wasOffline.current = true;
         showToast("Offline", "offline");
       } else {
-        // Kasus: Offline -> Online
         if (wasOffline.current) {
           showToast("Kembali online", "online");
           wasOffline.current = false;
-         
-          // SYNC: Kirim pesan pending saat koneksi pulih
           if (pendingMessages.length > 0) {
              syncPendingMessages();
           }
         }
-        // Jika awal buka app langsung online, tidak ada notifikasi (Sesuai request)
       }
     });
     return () => unsubscribe();
-  }, [pendingMessages]); // Dependency pendingMessages agar sync bisa akses state terbaru
+  }, [pendingMessages]); 
 
   const syncPendingMessages = async () => {
-    // Ambil queue terbaru langsung dari MMKV untuk memastikan data persisten
     const queueString = mmkvStorage.getString('offline_queue');
     if (!queueString) return;
 
@@ -203,7 +182,6 @@ export default function ChatScreen({ route, navigation }: Props) {
     console.log(`[SYNC] Mengirim ${queue.length} pesan pending...`);
     showToast("Mengirim pesan tertunda...", "online");
 
-    // Kita buat array baru untuk sisa antrian jika ada yang gagal
     const remainingQueue: MessageType[] = [];
 
     for (const msg of queue) {
@@ -212,27 +190,25 @@ export default function ChatScreen({ route, navigation }: Props) {
                 text: msg.text,
                 image: msg.image || null,
                 user: msg.user,
-                createdAt: serverTimestamp(), // Server yang tentukan waktu fix
-                clientMessageId: msg.clientMessageId || generateUniqueId(), // Cegah duplikat
+                createdAt: serverTimestamp(), 
+                clientMessageId: msg.clientMessageId || generateUniqueId(), 
             });
             console.log("Sukses kirim:", msg.text);
         } catch (error) {
             console.log("Gagal kirim, simpan balik ke queue:", error);
-            remainingQueue.push(msg); // Masukkan kembali jika gagal
+            remainingQueue.push(msg); 
         }
     }
 
-    // Update State & MMKV
     setPendingMessages(remainingQueue);
     if (remainingQueue.length > 0) {
         mmkvStorage.set('offline_queue', JSON.stringify(remainingQueue));
     } else {
-        mmkvStorage.remove('offline_queue'); // Hapus key jika kosong
+        mmkvStorage.remove('offline_queue'); 
         showToast("Semua pesan terkirim", "online");
     }
   };
 
-  // --- 4. HANDLE KEYBOARD ---
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
         setKeyboardVisible(true);
@@ -242,7 +218,6 @@ export default function ChatScreen({ route, navigation }: Props) {
         setKeyboardVisible(false);
     });
 
-    // Listener Tombol Back (Android)
     const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
       if (isKeyboardVisible) {
         setKeyboardVisible(false);
@@ -271,7 +246,6 @@ export default function ChatScreen({ route, navigation }: Props) {
                 await signOut(auth);
             } catch (e) {
                 console.log("Logout error (mungkin offline):", e);
-                // Tetap clear local storage
                 mmkvStorage.clearAll();
             }
         },
@@ -279,10 +253,8 @@ export default function ChatScreen({ route, navigation }: Props) {
     ]);
   };
 
-  // --- 5. LOGIKA DATA (LOAD & LISTEN) ---
   useEffect(() => {
     let isMounted = true;
-    // A. Load MMKV dengan Error Handling
     const loadLocalChat = () => {
       const savedChat = mmkvStorage.getString('chat_history');
       if (savedChat) {
@@ -301,7 +273,6 @@ export default function ChatScreen({ route, navigation }: Props) {
     };
     loadLocalChat();
 
-    // B. Load OFFINE QUEUE (Antrian Pesan) dari MMKV
     const loadQueue = () => {
       const savedQueue = mmkvStorage.getString('offline_queue');
       if (savedQueue) {
@@ -314,21 +285,16 @@ export default function ChatScreen({ route, navigation }: Props) {
     };
     loadQueue();
 
-    // C. Listen Firebase
     const q = query(messagesCollection, orderBy("createdAt", "asc"));
    
     const unsub = onSnapshot(q, { includeMetadataChanges: true },
       (snapshot: QuerySnapshot) => {
       if (!isMounted) return;
 
-      // Logika Guard: Jika snapshot kosong (mungkin baru konek atau offline), cek dulu
-      // Apakah ini karena 'fromCache' (offline) dan kosong?
       const source = snapshot.metadata.fromCache ? "local cache" : "server";
       console.log(`[ONLINE] Snapshot update dari ${source}. Jumlah docs: ${snapshot.docs.length}`);
 
       if (snapshot.empty) {
-          // Jika snapshot kosong, jangan hapus state messages yang mungkin sudah diisi dari MMKV
-          // Kecuali kita yakin server memang kosong (tapi susah dibedakan saat error koneksi)
           console.log("[ONLINE] Snapshot kosong. Mempertahankan data yang ada di layar.");
           return;
       }
@@ -341,7 +307,6 @@ export default function ChatScreen({ route, navigation }: Props) {
         });
       });
 
-      // Selalu update UI dengan data terbaru dari snapshot (baik itu cache Firestore atau Server)
       setMessages(list);
       if (list.length > 0) {
           try {
@@ -351,14 +316,10 @@ export default function ChatScreen({ route, navigation }: Props) {
               console.log("MMKV Write Error:", e);
           }
         }
-
-      // setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 500);
  
       if (isAtBottom) {
-          // Gunakan timeout kecil untuk memastikan render selesai
           setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       } else {
-          // Opsional: Tampilkan notifikasi kecil "Pesan Baru ↓" jika mau
           console.log("Ada pesan baru, tapi user sedang di atas. Tidak scroll.");
       }
 
@@ -388,32 +349,26 @@ export default function ChatScreen({ route, navigation }: Props) {
     const currentUser = mmkvStorage.getString('user.name') || auth.currentUser?.email || "Guest";
     const tempId = generateUniqueId();
 
-    // --- HANDLING OFFLINE ---
     if (isConnected === false) {        
-        // Buat pesan temporary
         const tempMsg: MessageType = {
-            id: `temp_${tempId}`, // ID sementara
+            id: `temp_${tempId}`, 
             text: textToSend,
             image: imageUrl || undefined,
             user: currentUser,
-            createdAt: Date.now(), // PAKAI WAKTU LOKAL HP
+            createdAt: Date.now(), 
             pending: true,
-            clientMessageId: tempId, // Simpan ID unik
+            clientMessageId: tempId, 
         };
 
-        // 1. Update State UI
         const newPendingList = [...pendingMessages, tempMsg];
         setPendingMessages(newPendingList);
 
-        // 2. Simpan ke MMKV (Persistent Queue)
         mmkvStorage.set('offline_queue', JSON.stringify(newPendingList));
        
         showToast("Pesan akan dikirim saat Anda kembali online", "offline");
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 400);
-        return; // Stop eksekusi, jangan coba kirim ke firebase dulu
+        return; 
     }
-
-    // --- HANDLING ONLINE ---
 
     setSending(true);
     try {
@@ -454,18 +409,9 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
   };
 
-  // --- DETEKSI POSISI SCROLL ---
   const handleScroll = (event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-   
-    // Hitung jarak dari bawah
-    // contentSize.height = Tinggi total semua chat
-    // layoutMeasurement.height = Tinggi layar HP
-    // contentOffset.y = Posisi scroll saat ini
     const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-   
-    // Jika jarak kurang dari 0.01 pixel, anggap "Mentok Bawah"
-    // Angka toleransi kecil biar ga harus pixel perfect
     const isCloseToBottom = distanceFromBottom < 50;
     console.log("isAtBottom: ", isCloseToBottom);
    
@@ -477,28 +423,26 @@ export default function ChatScreen({ route, navigation }: Props) {
   const renderItem = ({ item, index }: { item: MessageType, index: number }) => {
       const currentUser = mmkvStorage.getString('user.name') || auth.currentUser?.email || "Guest";
       const isMyMessage = item.user === currentUser;
-
-      // --- LOGIKA DATE PILL ---
       const showDatePill = () => {
-        if (index === 0) return true; // Pesan pertama selalu ada tanggal
+        if (index === 0) return true; 
        
         const prevMsg = displayedMessages[index - 1];
         const currentDate = getDateFromTimestamp(item.createdAt).toDateString();
         const prevDate = getDateFromTimestamp(prevMsg.createdAt).toDateString();
 
-        return currentDate !== prevDate; // Muncul jika tanggal beda dari pesan sebelumnya
+        return currentDate !== prevDate; 
       };
 
       return (
         <View>
-          {/* 1. RENDER DATE PILL */}
+          {/* RENDER DATE PILL */}
           {showDatePill() && (
             <View style={styles.datePill}>
               <Text style={styles.datePillText}>{formatDatePill(item.createdAt)}</Text>
             </View>
           )}
 
-          {/* 2. MESSAGE ROW */}
+          {/* MESSAGE ROW */}
           <View style={[
               styles.messageRow,
               { justifyContent: isMyMessage ? 'flex-end' : 'flex-start' }
@@ -528,11 +472,10 @@ export default function ChatScreen({ route, navigation }: Props) {
 
               {item.text ? <Text style={styles.msgText}>{item.text}</Text> : null}
 
-              {/* 3. TIMESTAMP DI DALAM BUBBLE */}
+              {/* TIMESTAMP DI DALAM BUBBLE */}
               <View style={styles.timeContainer}>
                  <Text style={styles.timeText}>
                     {formatTime(item.createdAt)}
-                    {/* Tanda Centang jika user sendiri dan sukses terkirim */}
                     {isMyMessage && !item.pending && (
                        <Text> <Icon name="check" size={10} color="#555" /></Text>
                     )}
@@ -546,11 +489,9 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* --- CUSTOM FIXED HEADER (HANYA MUNCUL SAAT KEYBOARD AKTIF) --- */}
       {isKeyboardVisible && (
         <View style={styles.fixedHeaderWrapper}>
           <View style={styles.fixedHeaderContent}>
-            {/* ✅ PAKAI headerTitle dari state (yang diambil dari props.children) */}
             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
               <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#000' }}>
                 {name}
@@ -565,8 +506,6 @@ export default function ChatScreen({ route, navigation }: Props) {
                 marginTop: 2,  
               }} />
             </View>
-
-            {/* Logout Button */}
             <TouchableOpacity onPress={handleLogout} style={{ marginRight: 10 }}>
               <Icon name="log-out" size={24} color="#FF3B30" />
             </TouchableOpacity>
@@ -585,7 +524,6 @@ export default function ChatScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       )}
      
-      {/* --- TOAST NOTIFICATION (PILL STYLE) --- */}
       <Animated.View style={[
           styles.toastContainer,
           { opacity: fadeAnim, backgroundColor: bannerColor }
@@ -595,7 +533,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       <FlatList
         ref={flatListRef}
-        data={displayedMessages} // Gunakan gabungan pesan
+        data={displayedMessages} 
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={{ padding: 10, paddingBottom: 20 }}
@@ -603,10 +541,6 @@ export default function ChatScreen({ route, navigation }: Props) {
         onScroll={handleScroll}
         scrollEventThrottle={16}
         onContentSizeChange={() => {
-            // 1. LOGIKA LOAD AWAL (Sticky Bottom)
-            // Selama user belum menyentuh layar (isFirstLoad = true), 
-            // setiap kali konten berubah ukuran (teks masuk, gambar loading selesai),
-            // kita paksa scroll ke bawah secara instan.
             if (isFirstLoad.current && displayedMessages.length > 0) {
                 flatListRef.current?.scrollToEnd({ animated: false });
 
@@ -615,8 +549,6 @@ export default function ChatScreen({ route, navigation }: Props) {
                 }, 15000);
             } 
             
-            // 2. LOGIKA CHAT BIASA (Pesan Baru masuk saat Online)
-            // Jika user memang sedang di posisi paling bawah, ikuti konten baru dengan animasi
             else if (isAtBottom) {
                 flatListRef.current?.scrollToEnd({ animated: true });
             }
@@ -627,17 +559,17 @@ export default function ChatScreen({ route, navigation }: Props) {
           if (isFirstLoad.current && displayedMessages.length > 0) {
             setTimeout(() => {
               flatListRef.current?.scrollToEnd({ animated: false });
-            }, 500); // Tambah delay kecil
+            }, 500); 
           }
         }}
         onScrollBeginDrag={() => {
           isFirstLoad.current = false;
            if (isKeyboardVisible) {
-             setKeyboardVisible(false); // Hilang instan saat jari nyentuh layar
-             Keyboard.dismiss(); // Turunkan keyboard
+             setKeyboardVisible(false); 
+             Keyboard.dismiss(); 
            }
         }}
-        keyboardDismissMode="on-drag" // Standar iOS/Android
+        keyboardDismissMode="on-drag"
 
       />
 
@@ -675,11 +607,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f2f2' },
   fixedHeaderWrapper: {
     position: 'absolute',
-    top: 0, // Posisi paling atas
+    top: 0, 
     left: 0,
     right: 0,
     height: 292,
-    zIndex: 9999, // Sangat tinggi agar di atas semua
+    zIndex: 9999, 
     elevation: 20,
     backgroundColor: '#fff',
   },
@@ -699,11 +631,11 @@ const styles = StyleSheet.create({
   },
   toastContainer: {
     position: 'absolute',
-    top: 20, // Muncul agak di bawah header
-    alignSelf: 'center', // Tengah horizontal
+    top: 20, 
+    alignSelf: 'center', 
     paddingHorizontal: 20,
     paddingVertical: 8,
-    borderRadius: 20, // Bentuk kapsul
+    borderRadius: 20, 
     zIndex: 20,
     elevation: 5,
     shadowColor: "#000",
@@ -718,11 +650,11 @@ const styles = StyleSheet.create({
   },
   msgBox: {
     padding: 10,
-    paddingBottom: 6, // Kurangi padding bawah biar timestamp muat rapi
+    paddingBottom: 6, 
     marginVertical: 4,
     borderRadius: 12,
     maxWidth: "75%",
-    minWidth: 80, // Tambah minWidth biar timestamp gak desek2an kalau chat pendek "Y"
+    minWidth: 80, 
   },
   myMsg: { backgroundColor: "#d1f0ff", alignSelf: "flex-end" },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 5 },
@@ -755,18 +687,18 @@ const styles = StyleSheet.create({
     color: '#555',
   },
   timeContainer: {
-    alignSelf: 'flex-end', // Pojok kanan bawah bubble
+    alignSelf: 'flex-end', 
     marginTop: 4,
     marginLeft: 8,
   },
   timeText: {
     fontSize: 10,
-    color: '#555', // Warna abu-abu biar ga ganggu teks utama
+    color: '#555', 
     opacity: 0.7,
   },
  scrollToBottomButton: {
     position: 'absolute',
-    bottom: 80, // Di atas input box (sesuaikan dengan tinggi inputRow + padding)
+    bottom: 80,
     right: 7,
     width: 40,
     height: 40,
