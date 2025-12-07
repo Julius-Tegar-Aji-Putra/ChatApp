@@ -21,32 +21,26 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
   
-  // State untuk memantau login via MMKV (agar logout offline jalan real-time)
   const [hasLocalSession, setHasLocalSession] = useState<boolean>(
     !!storage.getString('user.uid')
   );
   
-  // State lokal untuk nama
   const [localName, setLocalName] = useState<string | null>(() => {
       return storage.getString('user.name') || null;
   });
 
   useEffect(() => {
-    // 1. LISTENER MMKV (PENTING UNTUK LOGOUT & REGISTER)
     const listener = storage.addOnValueChangedListener((changedKey) => {
-      // Jika user.uid berubah/dihapus (saat logout), update state sesi
       if (changedKey === 'user.uid') {
         const uid = storage.getString('user.uid');
         setHasLocalSession(!!uid);
       }
-      // Jika user.name berubah (saat register), update nama
       if (changedKey === 'user.name') {
         const newName = storage.getString('user.name');
         if (newName) setLocalName(newName);
       }
     });
 
-    // 2. LISTENER FIREBASE AUTH
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
       
@@ -58,10 +52,6 @@ export default function App() {
             setLocalName(displayName);
         } 
       } 
-      // HAPUS ELSE YANG MERESET NAMA
-      // Kita tidak mau mereset nama di memori jika logout terjadi karena koneksi putus.
-      // Pembersihan data asli terjadi di tombol Logout (storage.clearAll).
-
       if (initializing) setInitializing(false);
     });
 
